@@ -9,12 +9,16 @@ import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPut;
 import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.util.EntityUtils;
 import org.apache.jena.rdf.model.*;
 import org.apache.jena.vocabulary.RDF;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.io.StringReader;
+import java.nio.charset.StandardCharsets;
 import java.text.ParseException;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -23,8 +27,20 @@ import java.util.Map;
  */
 @Service
 public class SolidPodClient {
-	private final SolidAuthClient solidAuthClient;
-	private final HttpClientCreator httpClientCreator;
+	public static final Resource TYPE_RESOURCE = ResourceFactory.createResource("http://www.w3.org/ns/ldp#Resource");
+	public static final Resource TYPE_CONTAINER = ResourceFactory.createResource("http://www.w3.org/ns/ldp#Container");
+	public static final Property PROPERTY_TYPE = ResourceFactory.createProperty("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
+
+	protected final SolidAuthClient solidAuthClient;
+	protected final HttpClientCreator httpClientCreator;
+
+	private final static Map<String, String> CONTENT_TYPE_MAP_RDF_ = new HashMap<>();
+	static {
+		CONTENT_TYPE_MAP_RDF_.put("application/rdf+xml", "RDF/XML");
+		CONTENT_TYPE_MAP_RDF_.put("text/turtle", "TURTLE");
+	}
+
+	protected final static Map<String, String> CONTENT_TYPE_MAP_RDF = Collections.unmodifiableMap(CONTENT_TYPE_MAP_RDF_);
 
 	public SolidPodClient(SolidAuthClient solidAuthClient, HttpClientCreator httpClientCreator) {
 		this.solidAuthClient = solidAuthClient;
@@ -33,11 +49,19 @@ public class SolidPodClient {
 
 	public String getBaseUrl(String token, String path) throws IOException {
 		try {
-			final String subject = SignedJWT.parse(token).getJWTClaimsSet().getSubject();
+			String subject = getSubject(token);
 			return UrlUtils.getBaseUrl(subject, path);
 		} catch (ParseException e) {
 			throw new IOException(e);
 		}
+	}
+
+	private String getSubject(String token) throws ParseException {
+		return SignedJWT.parse(token).getJWTClaimsSet().getSubject();
+	}
+
+	public String getWebId(OAuth2Token token) throws ParseException {
+		return getSubject(token.getIdToken());
 	}
 
 	public Map<String, Object> listFiles(OAuth2Token token, String path) throws IOException {
@@ -50,11 +74,9 @@ public class SolidPodClient {
 		while (statements.hasNext()) {
 			final Statement next = statements.next();
 			final RDFNode object = next.getObject();
-			final Resource container = ResourceFactory.createResource("http://www.w3.org/ns/ldp#Container");
-			final Resource resource = ResourceFactory.createResource("http://www.w3.org/ns/ldp#Resource");
 			final Resource item = object.asResource();
 			final String name = getLocalName(item);
-			if (model.contains(item, RDF.type, container)) {
+			if (model.contains(item, RDF.type, TYPE_CONTAINER)) {
 				String childPath;
 				if (StringUtils.endsWith(path, "/")) {
 					childPath = String.format("%s%s/", path, name);
@@ -63,7 +85,7 @@ public class SolidPodClient {
 				}
 
 				rv.put(name, listFiles(token, childPath));
-			} else if (model.contains(item, RDF.type, resource)) {
+			} else if (model.contains(item, RDF.type, TYPE_RESOURCE)) {
 				rv.put(name, name);
 			}
 
@@ -85,7 +107,7 @@ public class SolidPodClient {
 			setHeaders(headers, httpPut);
 			httpPut.setEntity(new StringEntity(content, encoding));
 
-			try (final CloseableHttpResponse response = client.execute(httpPut)) {
+			try (CloseableHttpResponse response = client.execute(httpPut)) {
 				return response.getStatusLine().getStatusCode() == 201;
 			}
 		}
@@ -100,9 +122,14 @@ public class SolidPodClient {
 		return StringUtils.substringAfterLast(uri, "/");
 	}
 
-	private Model getRdfRequest(OAuth2Token token, String url, String method) throws IOException {
+	protected Model getRdfRequest(OAuth2Token token, String url, String method) throws IOException {
+		return getRdfRequest(token, url, method, "application/rdf+xml");
+	}
+
+	protected Model getRdfRequest(OAuth2Token token, String url, String method, String contentType) throws IOException {
 		Map<String, String> headers = new HashMap<>();
-		headers.put("Accept", "application/rdf+xml");
+
+		headers.put("Accept", contentType);
 
 		try (CloseableHttpClient client = httpClientCreator.createHttpClient()) {
 			HttpGet httpGet = new HttpGet(url);
@@ -112,8 +139,8 @@ public class SolidPodClient {
 			try (CloseableHttpResponse response = client.execute(httpGet)) {
 				Model model = ModelFactory.createDefaultModel();
 				final HttpEntity entity = response.getEntity();
-//			final String content = EntityUtils.toString(entity, StandardCharsets.UTF_8);
-				return model.read(entity.getContent(), url, "RDF/XML");
+				final String content = EntityUtils.toString(entity, StandardCharsets.UTF_8);
+				return model.read(new StringReader(content), url, CONTENT_TYPE_MAP_RDF.get(contentType));
 			}
 		}
 	}

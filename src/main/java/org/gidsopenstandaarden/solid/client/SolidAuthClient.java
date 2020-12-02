@@ -61,7 +61,6 @@ public class SolidAuthClient {
 
 		if (!state.containsKey("validation_key")) {
 
-			;
 			RSAKey publicJwk = jwtSigingKey.toPublicJWK();
 			publicJwk = new RSAKey.Builder(publicJwk).keyOperations(Set.of(KeyOperation.VERIFY)).build();
 			state.put("validation_key", publicJwk.toJSONObject());
