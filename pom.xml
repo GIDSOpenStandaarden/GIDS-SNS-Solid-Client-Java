@@ -119,17 +119,17 @@
   <repositories>
     <repository>
       <id>gitlab-maven</id>
-      <url>https://gitlab.example.com/api/v4/groups/10298538/-/packages/maven</url>
+      <url>${env.CI_SERVER_URL}/api/v4/groups/10298538/-/packages/maven</url>
     </repository>
   </repositories>
   <distributionManagement>
     <repository>
       <id>gitlab-maven</id>
-      <url>https://gitlab.example.com/api/v4/projects/22867851/packages/maven</url>
+      <url>${env.CI_SERVER_URL}/api/v4/projects/22867851/packages/maven</url>
     </repository>
     <snapshotRepository>
       <id>gitlab-maven</id>
-      <url>https://gitlab.example.com/api/v4/projects/22867851/packages/maven</url>
+      <url>${env.CI_SERVER_URL}/api/v4/projects/22867851/packages/maven</url>
     </snapshotRepository>
   </distributionManagement>
 </project>
